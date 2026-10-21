@@ -1,0 +1,23 @@
+{
+	"id": "001",
+	"title": "Fix category update route parameter",
+	"testCommand": "node tests/test.js",
+	"checks": [
+		{
+			"name": "regression",
+			"points": 7,
+			"description": "The update route includes CategoryId and reaches the controller contract."
+		},
+		{
+			"name": "compatibility",
+			"points": 2,
+			"description": "Authentication middleware and existing route behavior are preserved."
+		},
+		{
+			"name": "scope",
+			"points": 1,
+			"description": "The change is focused and does not require external services."
+		}
+	],
+	"totalPoints": 10
+}

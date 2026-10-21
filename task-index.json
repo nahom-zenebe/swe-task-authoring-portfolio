@@ -1,0 +1,10 @@
+[
+	{
+		"id": "001",
+		"title": "Fix category update route parameter",
+		"shortDescription": "Make the category update endpoint provide the ID expected by its controller.",
+		"affectedArea": "backend/Routers/categoryRouter.js",
+		"sourceCommit": "local workspace baseline",
+		"testCommand": "node tests/test.js"
+	}
+]

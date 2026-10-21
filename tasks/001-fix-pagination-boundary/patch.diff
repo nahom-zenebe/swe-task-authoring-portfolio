@@ -1,0 +1,6 @@
+diff --git a/backend/Routers/categoryRouter.js b/backend/Routers/categoryRouter.js
+--- a/backend/Routers/categoryRouter.js
++++ b/backend/Routers/categoryRouter.js
+@@
+-router.put("/updateCategory",authmiddleware,updateCategory)
++router.put("/updateCategory/:CategoryId",authmiddleware,updateCategory)

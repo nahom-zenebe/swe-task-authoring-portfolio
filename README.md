@@ -28,6 +28,23 @@ The `tasks/` directory is the source of truth for individual benchmark cases.
 The top-level index should make every task discoverable without opening each
 directory.
 
+## Featured Task
+
+Task `001` demonstrates a complete defect-to-verification workflow against the
+inventory application. The category update controller reads `CategoryId` from
+`req.params`, but the original router omitted that path parameter, causing
+resource-style update requests to return 404. The reference fix adds the
+parameter while preserving authentication and the existing handler.
+
+Run its dependency-free regression check from this repository root:
+
+```bash
+node tasks/001-fix-pagination-boundary/tests/test.js
+```
+
+The test uses the local application checkout by default. Set `SOURCE_REPO` to
+run it against another checkout.
+
 ## Source Application
 
 The upstream application is a MERN stack project with separate application
