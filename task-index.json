@@ -6,5 +6,13 @@
 		"affectedArea": "backend/Routers/categoryRouter.js",
 		"sourceCommit": "local workspace baseline",
 		"testCommand": "node tests/test.js"
+	},
+	{
+		"id": "002",
+		"title": "Implement bulk product import and export",
+		"shortDescription": "Add validated admin CSV import and filtered authenticated inventory export.",
+		"affectedArea": "backend/controller/productController.js and frontend/src/pages/Productpage.jsx",
+		"sourceCommit": "local workspace baseline",
+		"testCommand": "python3 -m pytest tasks/002-Implement-Bulk-Product-Import-and-Export/tests/test_cache.py"
 	}
 ]

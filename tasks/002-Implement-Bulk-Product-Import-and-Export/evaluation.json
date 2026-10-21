@@ -1,0 +1,33 @@
+{
+	"id": "002",
+	"title": "Implement bulk product import and export",
+	"testCommand": "python3 -m pytest tests/test_cache.py",
+	"checks": [
+		{
+			"name": "import-validation",
+			"points": 3,
+			"description": "CSV headers and product fields are validated with row-specific errors before insertion."
+		},
+		{
+			"name": "import-safety",
+			"points": 2,
+			"description": "Unknown categories and duplicate product names are rejected without partial writes."
+		},
+		{
+			"name": "export",
+			"points": 2,
+			"description": "Authenticated export returns escaped CSV and applies search and category filters."
+		},
+		{
+			"name": "authorization",
+			"points": 2,
+			"description": "Imports require authentication and administrator authorization."
+		},
+		{
+			"name": "frontend",
+			"points": 1,
+			"description": "The product page exposes admin import and filtered export controls."
+		}
+	],
+	"totalPoints": 10
+}

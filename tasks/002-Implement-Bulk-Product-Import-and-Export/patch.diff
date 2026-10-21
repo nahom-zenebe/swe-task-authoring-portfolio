@@ -1,0 +1,358 @@
+diff --git a/backend/Routers/ProductRouter.js b/backend/Routers/ProductRouter.js
+--- a/backend/Routers/ProductRouter.js
++++ b/backend/Routers/ProductRouter.js
+@@ -1,7 +1,10 @@
+ const express=require("express")
+ const router=express.Router()
+-const {Addproduct,getTopProductsByQuantity,RemoveProduct,SearchProduct,EditProduct,getProduct}=require('../controller/productController')
++const {Addproduct,getTopProductsByQuantity,RemoveProduct,SearchProduct,EditProduct,getProduct,importProducts,exportProducts}=require('../controller/productController')
+ const {authmiddleware,adminmiddleware,managermiddleware}=require('../middleware/Authmiddleware')
++const multer=require('multer')
++
++const upload=multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } })
+ 
+ 
+ router.post("/addproduct",authmiddleware,Addproduct)
+@@ -10,6 +13,8 @@ router.get("/getproduct",authmiddleware,getProduct)
+ router.get("/searchproduct",authmiddleware,SearchProduct)
+ router.put("/editproduct/:productId",authmiddleware,EditProduct)
+ router.get("/getTopProductsByQuantity",authmiddleware,getTopProductsByQuantity)
++router.post("/import",authmiddleware,adminmiddleware,upload.single("file"),importProducts)
++router.get("/export",authmiddleware,exportProducts)
+ 
+ 
+ 
+diff --git a/backend/controller/productController.js b/backend/controller/productController.js
+--- a/backend/controller/productController.js
++++ b/backend/controller/productController.js
+@@ -1,3 +1,6 @@
+ const Product=require('../models/Productmodel')
+ 
+ const logActivity=require('../libs/logger')
++const Category=require('../models/ Categorymodel')
++const mongoose=require('mongoose')
++const { parseProductCsv, csvEscape }=require('../libs/productCsv')
+@@ -186,3 +189,106 @@ module.exports.SearchProduct = async (req, res) => {
+    }
+ };
+ 
++module.exports.importProducts = async (req, res) => {
++  if (!req.file) {
++    return res.status(400).json({ message: "A CSV file is required." });
++  }
++
++  const { rows, errors } = parseProductCsv(req.file.buffer.toString("utf8"));
++  if (errors.length) {
++    return res.status(400).json({ message: "CSV contains invalid rows.", errors });
++  }
++
++  try {
++    const categoryValues = [...new Set(rows.map((row) => row.category))];
++    const categoryIds = categoryValues.filter((value) => mongoose.isValidObjectId(value));
++    const categories = await Category.find({
++      $or: [
++        { name: { $in: categoryValues } },
++        ...(categoryIds.length ? [{ _id: { $in: categoryIds } }] : []),
++      ],
++    });
++    const categoryMap = new Map();
++    categories.forEach((category) => {
++      categoryMap.set(category.name.toLowerCase(), category._id);
++      categoryMap.set(category._id.toString(), category._id);
++    });
++
++    const duplicateErrors = [];
++    const namesInFile = new Set();
++    rows.forEach((row) => {
++      const key = row.name.toLowerCase();
++      if (namesInFile.has(key)) duplicateErrors.push({ row: row.rowNumber, message: `Duplicate product name: ${row.name}.` });
++      namesInFile.add(key);
++      if (!categoryMap.has(row.category.toLowerCase())) {
++        duplicateErrors.push({ row: row.rowNumber, message: `Category not found: ${row.category}.` });
++      }
++    });
++
++    const existingProducts = await Product.find({ name: { $in: rows.map((row) => row.name) } }).select("name");
++    const existingNames = new Set(existingProducts.map((product) => product.name.toLowerCase()));
++    rows.forEach((row) => {
++      if (existingNames.has(row.name.toLowerCase())) {
++        duplicateErrors.push({ row: row.rowNumber, message: `Product already exists: ${row.name}.` });
++      }
++    });
++
++    if (duplicateErrors.length) {
++      return res.status(400).json({ message: "CSV contains invalid rows.", errors: duplicateErrors });
++    }
++
++    const products = rows.map((row) => ({
++      name: row.name,
++      Desciption: row.description,
++      Category: categoryMap.get(row.category.toLowerCase()),
++      Price: row.price,
++      quantity: row.quantity,
++    }));
++    const createdProducts = await Product.insertMany(products, { ordered: true });
++
++    await logActivity({
++      action: "Bulk Add Products",
++      description: `${createdProducts.length} products were imported`,
++      entity: "product",
++      entityId: createdProducts[0]._id,
++      userId: req.user._id,
++      ipAddress: req.ip,
++    });
++
++    return res.status(201).json({ message: "Products imported successfully.", importedCount: createdProducts.length });
++  } catch (error) {
++    return res.status(500).json({ message: "Error importing products.", error: error.message });
++  }
++};
++
++module.exports.exportProducts = async (req, res) => {
++  try {
++    const filter = {};
++    if (req.query.query) {
++      filter.$or = [
++        { name: { $regex: req.query.query, $options: "i" } },
++        { Desciption: { $regex: req.query.query, $options: "i" } },
++      ];
++    }
++    if (req.query.category) {
++      const category = mongoose.isValidObjectId(req.query.category)
++        ? req.query.category
++        : await Category.findOne({ name: { $regex: `^${req.query.category}$`, $options: "i" } }).select("_id");
++      filter.Category = category?._id || category;
++    }
++
++    const products = await Product.find(filter).populate("Category").sort({ createdAt: -1 });
++    const lines = ["name,description,category,price,quantity"];
++    products.forEach((product) => {
++      lines.push([
++        product.name,
++        product.Desciption,
++        product.Category?.name || "",
++        product.Price,
++        product.quantity,
++      ].map(csvEscape).join(","));
++    });
++
++    res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": "attachment; filename=products.csv" });
++    return res.status(200).send(lines.join("\n"));
++  } catch (error) {
++    return res.status(500).json({ message: "Error exporting products.", error: error.message });
++  }
++};
+diff --git a/backend/package.json b/backend/package.json
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -25,0 +26 @@
++    "multer": "^2.4.0",
+diff --git a/backend/libs/productCsv.js b/backend/libs/productCsv.js
+new file mode 100644
+--- /dev/null
++++ b/backend/libs/productCsv.js
+@@ -0,0 +1,84 @@
++const REQUIRED_COLUMNS = ["name", "description", "category", "price", "quantity"];
++
++function parseCsvLine(line) {
++  const values = [];
++  let value = "";
++  let quoted = false;
++
++  for (let index = 0; index < line.length; index += 1) {
++    const character = line[index];
++    const nextCharacter = line[index + 1];
++
++    if (character === '"' && quoted && nextCharacter === '"') {
++      value += '"';
++      index += 1;
++    } else if (character === '"') {
++      quoted = !quoted;
++    } else if (character === "," && !quoted) {
++      values.push(value.trim());
++      value = "";
++    } else {
++      value += character;
++    }
++  }
++
++  if (quoted) {
++    throw new Error("Unclosed quoted value");
++  }
++
++  values.push(value.trim());
++  return values;
++}
++
++function parseProductCsv(csv) {
++  const lines = csv.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
++  if (lines.length < 2) {
++    return { rows: [], errors: [{ row: 1, message: "CSV must contain a header and at least one product row." }] };
++  }
++
++  let headers;
++  try {
++    headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase());
++  } catch (error) {
++    return { rows: [], errors: [{ row: 1, message: error.message }] };
++  }
++
++  const missingColumns = REQUIRED_COLUMNS.filter((column) => !headers.includes(column));
++  if (missingColumns.length) {
++    return { rows: [], errors: [{ row: 1, message: `Missing required columns: ${missingColumns.join(", ")}.` }] };
++  }
++
++  const rows = [];
++  const errors = [];
++  lines.slice(1).forEach((line, index) => {
++    const rowNumber = index + 2;
++    try {
++      const values = parseCsvLine(line);
++      if (values.length !== headers.length) {
++        throw new Error("Column count does not match the header.");
++      }
++      const row = Object.fromEntries(headers.map((header, valueIndex) => [header, values[valueIndex]]));
++      const price = Number(row.price);
++      const quantity = Number(row.quantity);
++
++      if (!row.name) throw new Error("Name is required.");
++      if (!row.description) throw new Error("Description is required.");
++      if (!row.category) throw new Error("Category is required.");
++      if (!Number.isFinite(price) || price < 0) throw new Error("Price must be a non-negative number.");
++      if (!Number.isInteger(quantity) || quantity < 0) throw new Error("Quantity must be a non-negative integer.");
++
++      rows.push({ rowNumber, name: row.name, description: row.description, category: row.category, price, quantity });
++    } catch (error) {
++      errors.push({ row: rowNumber, message: error.message });
++    }
++  });
++
++  return { rows, errors };
++}
++
++function csvEscape(value) {
++  const text = value === null || value === undefined ? "" : String(value);
++  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
++}
++
++module.exports = { parseProductCsv, csvEscape };
+diff --git a/frontend/src/features/productSlice.js b/frontend/src/features/productSlice.js
+--- a/frontend/src/features/productSlice.js
++++ b/frontend/src/features/productSlice.js
+@@ -99,0 +100,24 @@
++  export const ImportProducts = createAsyncThunk('product/importProducts', async (file, { rejectWithValue }) => {
++    try {
++      const formData = new FormData();
++      formData.append('file', file);
++      const response = await axiosInstance.post('product/import', formData, { withCredentials: true });
++      return response.data;
++    } catch (error) {
++      return rejectWithValue(error.response?.data || { message: 'Product import failed.' });
++    }
++  });
++
++  export const ExportProducts = createAsyncThunk('product/exportProducts', async ({ query, category }, { rejectWithValue }) => {
++    try {
++      const response = await axiosInstance.get('product/export', {
++        params: { query: query || undefined, category: category || undefined },
++        responseType: 'blob',
++        withCredentials: true,
++      });
++      return response.data;
++    } catch (error) {
++      return rejectWithValue(error.response?.data?.message || 'Product export failed.');
++    }
++  });
+diff --git a/frontend/src/pages/Productpage.jsx b/frontend/src/pages/Productpage.jsx
+--- a/frontend/src/pages/Productpage.jsx
++++ b/frontend/src/pages/Productpage.jsx
+@@ -1,4 +1,4 @@
+-import React, { useEffect, useState } from "react";
++import React, { useEffect, useRef, useState } from "react";
+@@ -10,6 +10,8 @@
+	Searchproduct,
+	Removeproduct,
+	EditProduct,
++  ImportProducts,
++  ExportProducts,
+ } from "../features/productSlice";
+@@ -19,7 +21,9 @@ function Productpage() {
+	);
+	const { getallCategory } = useSelector((state) => state.category);
++  const { Authuser } = useSelector((state) => state.auth);
+	const dispatch = useDispatch();
++  const importInputRef = useRef(null);
+@@ -29,6 +33,7 @@ function Productpage() {
+	const [isFormVisible, setIsFormVisible] = useState(false);
+	const [selectedProduct, setSelectedProduct] = useState(null);
++  const [selectedCategory, setSelectedCategory] = useState("");
+@@ -106,6 +111,38 @@ function Productpage() {
+		 });
+	};
++
++  const handleImport = (event) => {
++    const file = event.target.files?.[0];
++    if (!file) return;
++    dispatch(ImportProducts(file))
++      .unwrap()
++      .then((result) => {
++        toast.success(`${result.importedCount} products imported successfully`);
++        dispatch(gettingallproducts());
++      })
++      .catch((error) => {
++        const details = error.errors?.map((item) => `Row ${item.row}: ${item.message}`).join(" ");
++        toast.error(details || error.message || "Product import failed");
++      })
++      .finally(() => {
++        event.target.value = "";
++      });
++  };
++
++  const handleExport = () => {
++    dispatch(ExportProducts({ query, category: selectedCategory }))
++      .unwrap()
++      .then((csv) => {
++        const url = URL.createObjectURL(csv);
++        const link = document.createElement("a");
++        link.href = url;
++        link.download = "products.csv";
++        link.click();
++        URL.revokeObjectURL(url);
++      })
++      .catch((error) => toast.error(error || "Product export failed"));
++  };
+@@ -127,7 +164,10 @@ function Productpage() {
+-  const displayProducts = query.trim() !== "" ? searchdata : getallproduct;
++  const products = query.trim() !== "" ? searchdata : getallproduct;
++  const displayProducts = selectedCategory
++    ? products?.filter((product) => product.Category?._id === selectedCategory)
++    : products;
+@@ -170,6 +210,31 @@ function Productpage() {
+			  >
+				 <IoMdAdd className="text-xl mr-2" /> Add Product
+			  </button>
++          <select
++            value={selectedCategory}
++            onChange={(event) => setSelectedCategory(event.target.value)}
++            className="h-12 border-2 border-gray-300 rounded-lg px-3"
++            aria-label="Filter by category"
++          >
++            <option value="">All categories</option>
++            {getallCategory?.map((category) => (
++              <option key={category._id} value={category._id}>{category.name}</option>
++            ))}
++          </select>
++          {Authuser?.role === "admin" && (
++            <>
++              <input ref={importInputRef} type="file" accept=".csv,text/csv" onChange={handleImport} className="hidden" />
++              <button
++                onClick={() => importInputRef.current?.click()}
++                className="bg-emerald-700 text-white h-12 px-4 rounded-lg"
++              >
++                Import CSV
++              </button>
++            </>
++          )}
++          <button onClick={handleExport} className="bg-slate-700 text-white h-12 px-4 rounded-lg">
++            Export CSV
++          </button>
