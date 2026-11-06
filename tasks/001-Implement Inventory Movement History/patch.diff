@@ -1,0 +1,163 @@
+diff --git a/backend/models/StockTranscationmodel.js b/backend/models/StockTranscationmodel.js
+--- a/backend/models/StockTranscationmodel.js
++++ b/backend/models/StockTranscationmodel.js
+@@ -8,7 +8,7 @@ const StockTranscationSchema= new mongoose.Schema({
+    type:{
+     type:String,
+-    enum:["Stock-in","Stock-out"],
++    enum:["sale","purchase","return","adjustment","damage"],
+     required:true,
+    },
+    quantity:{
+@@ -19,6 +19,18 @@ const StockTranscationSchema= new mongoose.Schema({
+    supplier:{
+     type:mongoose.Schema.Types.ObjectId,
+     ref:"Supplier"
+    },
++   previousStock:{
++    type:Number,
++    required:true
++   },
++   resultingStock:{
++    type:Number,
++    required:true
++   },
++   reason:{
++    type:String
++   },
++   user:{
++    type:mongoose.Schema.Types.ObjectId,
++    ref:"User"
++   },
+ },
+diff --git a/backend/Routers/stocktransactionrouter.js b/backend/Routers/stocktransactionrouter.js
+--- a/backend/Routers/stocktransactionrouter.js
++++ b/backend/Routers/stocktransactionrouter.js
+@@ -1,11 +1,13 @@
+ const express = require('express');
+ const router = express.Router();
+-const {createStockTransaction,getAllStockTransactions,searchStocks,getStockTransactionsByProduct,getStockTransactionsBySupplier} = require('../controller/stocktransaction');
++const {createStockTransaction,getAllStockTransactions,searchStocks,getStockTransactionsByProduct,getStockTransactionsBySupplier,getMovementHistory} = require('../controller/stocktransaction');
++const {authmiddleware} = require('../middleware/Authmiddleware');
+ 
+-router.post('/createStockTransaction', createStockTransaction);
+-router.get('/getallStockTransaction', getAllStockTransactions);
+-router.get('/product/:productId',getStockTransactionsByProduct);
+-router.get('/supplier/:supplierId',getStockTransactionsBySupplier);
+-router.get('/searchstocks',searchStocks);
++router.post('/createStockTransaction', authmiddleware, createStockTransaction);
++router.get('/getallStockTransaction', authmiddleware, getAllStockTransactions);
++router.get('/history/:productId', authmiddleware, getMovementHistory);
++router.get('/product/:productId', authmiddleware, getStockTransactionsByProduct);
++router.get('/supplier/:supplierId', authmiddleware, getStockTransactionsBySupplier);
++router.get('/searchstocks', authmiddleware, searchStocks);
+ 
+ module.exports = router;
+diff --git a/backend/controller/stocktransaction.js b/backend/controller/stocktransaction.js
+--- a/backend/controller/stocktransaction.js
++++ b/backend/controller/stocktransaction.js
+@@ -4,11 +4,12 @@ const StockTransaction = require('../models/StockTranscationmodel');
+ module.exports.createStockTransaction = async (req, res) => {
+   try {
+-    const { product, type, quantity, supplier } = req.body;
++    const { product, type, quantity, supplier, previousStock, resultingStock, reason } = req.body;
+ 
+-    if (!product || !type || !quantity) {
+-      return res.status(400).json({ success: false, message: "Product, type, and quantity are required." });
++    if (!product || !type || !quantity || previousStock === undefined || resultingStock === undefined) {
++      return res.status(400).json({ success: false, message: "Product, type, quantity, previousStock, and resultingStock are required." });
+     }
+ 
+     const newTransaction = new StockTransaction({
+       product,
+       type,
+       quantity,
+       supplier,
++      previousStock,
++      resultingStock,
++      reason,
++      user: req.user?._id,
+     });
+@@ -38,7 +49,7 @@ module.exports.getStockTransactionsByProduct = async (req, res) => {
+     const { productId } = req.params;
+ 
+-    const transactions = await StockTransaction.find({ product: productId }).populate('Supplier').sort({ transactionDate: -1 });
++    const transactions = await StockTransaction.find({ product: productId }).populate('supplier').sort({ transactionDate: -1 });
+ 
+     if (!transactions || transactions.length === 0) {
+       return res.status(404).json({ success: false, message: "No transactions found for this product." });
+@@ -70,3 +81,30 @@ module.exports.searchStocks = async (req, res) => {
+   } catch (error) {
+     res.status(500).json({ message: "Error finding product", error: error.message });
+   }
+ };
++
++module.exports.getMovementHistory = async (req, res) => {
++  try {
++    const { productId } = req.params;
++    const { startDate, endDate, type } = req.query;
++
++    const filter = { product: productId };
++
++    if (type) {
++      filter.type = type;
++    }
++
++    if (startDate || endDate) {
++      filter.transactionDate = {};
++      if (startDate) filter.transactionDate.$gte = new Date(startDate);
++      if (endDate) filter.transactionDate.$lte = new Date(endDate);
++    }
++
++    const history = await StockTransaction.find(filter)
++      .populate('product')
++      .populate('supplier')
++      .populate('user', 'name email')
++      .sort({ transactionDate: -1 });
++
++    res.status(200).json({ success: true, history });
++  } catch (error) {
++    res.status(500).json({ success: false, message: "Error fetching movement history", error: error.message });
++  }
++};
+diff --git a/frontend/src/features/stocktransactionSlice.js b/frontend/src/features/stocktransactionSlice.js
+--- a/frontend/src/features/stocktransactionSlice.js
++++ b/frontend/src/features/stocktransactionSlice.js
+@@ -52,7 +52,7 @@ const stocktransactionSlice = createSlice({
+       .addCase(createStockTransaction .fulfilled, (state, action) => {
+         state.iscreatedStocks = false;
+-        state.getallStocks.push(action.payload);
+-
++        // do not push the raw API response; list will refresh on next fetch
+       })
+diff --git a/frontend/src/pages/StockTransaction.jsx b/frontend/src/pages/StockTransaction.jsx
+--- a/frontend/src/pages/StockTransaction.jsx
++++ b/frontend/src/pages/StockTransaction.jsx
+@@ -130,8 +130,10 @@ function StockTransaction() {
+               <thead className="">
+                 <tr>
+                 <th className="px-3 py-2 border w-5">#</th>
+                   <th className="px-3 py-2 border">Date</th>
+                   <th className="px-3 py-2 border">Product</th>
+                   <th className="px-3 py-2 border">Type</th>
+                   <th className="px-3 py-2 border">Quantity</th>
++                  <th className="px-3 py-2 border">Prev Stock</th>
++                  <th className="px-3 py-2 border">Resulting Stock</th>
+                   <th className="px-3 py-2 border">Supplier</th>
+                 </tr>
+               </thead>
+@@ -145,9 +147,11 @@ function StockTransaction() {
+                        <td className="px-3 py-2 border">
+                         <FormattedTime  timestamp={Stocks.transactionDate}/>
+                        </td>
+-                      <td  className="px-3 py-2 border">box</td>
++                      <td className="px-3 py-2 border">{Stocks.product?.name || "-"}</td>
+                      
+                       <td className="px-3 py-2 border">
+                         {Stocks.type}
+                       </td>
+                       <td className="px-3 py-2 border">{Stocks.quantity}</td>
+-                      <td  className="px-3 py-2 border">Abebe</td>
++                      <td className="px-3 py-2 border">{Stocks.previousStock ?? "-"}</td>
++                      <td className="px-3 py-2 border">{Stocks.resultingStock ?? "-"}</td>
++                      <td className="px-3 py-2 border">{Stocks.supplier?.name || "-"}</td>

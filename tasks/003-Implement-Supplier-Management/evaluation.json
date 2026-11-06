@@ -1,7 +1,7 @@
 {
 	"id": "003",
 	"title": "Implement supplier management",
-	"testCommand": "python3 -m pytest tests/test_validation.py",
+	"testCommand": "node tests/test_validation.js",
 	"checks": [
 		{
 			"name": "model",

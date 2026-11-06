@@ -1,7 +1,7 @@
 {
 	"id": "002",
 	"title": "Implement bulk product import and export",
-	"testCommand": "python3 -m pytest tests/test_cache.py",
+	"testCommand": "node tests/test_cache.js",
 	"checks": [
 		{
 			"name": "import-validation",

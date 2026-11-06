@@ -1,0 +1,33 @@
+{
+	"id": "001",
+	"title": "Implement inventory movement history",
+	"testCommand": "node tests/test.js",
+	"checks": [
+		{
+			"name": "model",
+			"points": 3,
+			"description": "StockTransaction model contains previousStock, resultingStock, reason, and user fields, and the type enum covers sale, purchase, return, adjustment, and damage."
+		},
+		{
+			"name": "routes",
+			"points": 2,
+			"description": "All stock-transaction routes require authmiddleware and a GET /history/:productId route exists."
+		},
+		{
+			"name": "controller",
+			"points": 2,
+			"description": "getStockTransactionsByProduct populates supplier (lowercase) and getMovementHistory filters by type and date range."
+		},
+		{
+			"name": "frontend-slice",
+			"points": 1,
+			"description": "The createStockTransaction fulfilled reducer does not push the raw API response onto getallStocks."
+		},
+		{
+			"name": "frontend-page",
+			"points": 2,
+			"description": "The stock-transaction table renders real product and supplier names and includes previousStock and resultingStock columns."
+		}
+	],
+	"totalPoints": 10
+}
