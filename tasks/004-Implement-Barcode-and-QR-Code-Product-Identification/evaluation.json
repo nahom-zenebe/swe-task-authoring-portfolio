@@ -1,0 +1,33 @@
+{
+	"id": "004",
+	"title": "Implement barcode and QR-code product identification",
+	"testCommand": "node tests/test_barcode.js",
+	"checks": [
+		{
+			"name": "model",
+			"points": 2,
+			"description": "Product has an optional trimmed unique barcode field that remains compatible with legacy records."
+		},
+		{
+			"name": "creation",
+			"points": 2,
+			"description": "Product creation assigns a missing barcode and rejects duplicate codes with a 409 response."
+		},
+		{
+			"name": "lookup",
+			"points": 2,
+			"description": "An authenticated lookup route returns the populated product and handles unknown codes with 404."
+		},
+		{
+			"name": "frontend-lookup",
+			"points": 2,
+			"description": "Redux and the product page provide manual code lookup and display the resolved product or error."
+		},
+		{
+			"name": "frontend-scanning",
+			"points": 2,
+			"description": "The page uses BarcodeDetector when available, supports QR/barcode formats, and preserves a manual fallback."
+		}
+	],
+	"totalPoints": 10
+}

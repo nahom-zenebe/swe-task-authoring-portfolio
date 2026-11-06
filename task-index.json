@@ -14,5 +14,21 @@
 		"affectedArea": "backend/controller/productController.js and frontend/src/pages/Productpage.jsx",
 		"sourceCommit": "local workspace baseline",
 		"testCommand": "python3 -m pytest tasks/002-Implement-Bulk-Product-Import-and-Export/tests/test_cache.py"
+	},
+	{
+		"id": "003",
+		"title": "Implement supplier management",
+		"shortDescription": "Complete authenticated supplier CRUD, product validation, and supplier form behavior.",
+		"affectedArea": "backend supplier module and frontend supplier page/state",
+		"sourceCommit": "local workspace baseline",
+		"testCommand": "node tasks/003-Implement-Supplier-Management/tests/test_validation.js"
+	},
+	{
+		"id": "004",
+		"title": "Implement barcode and QR-code product identification",
+		"shortDescription": "Add unique product codes, authenticated lookup, and browser-native scanning with manual fallback.",
+		"affectedArea": "backend product model/controller/router and frontend product page/state",
+		"sourceCommit": "3869035",
+		"testCommand": "node tasks/004-Implement-Barcode-and-QR-Code-Product-Identification/tests/test_barcode.js"
 	}
 ]
