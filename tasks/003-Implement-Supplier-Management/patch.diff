@@ -1,0 +1,120 @@
+diff --git a/backend/models/Suppliermodel.js b/backend/models/Suppliermodel.js
+--- a/backend/models/Suppliermodel.js
++++ b/backend/models/Suppliermodel.js
+@@ -13,8 +13,8 @@ const SupplierSchema= new mongoose.Schema({
+     },
+-    productsSupplied:{
+-        type:mongoose.Schema.Types.ObjectId,
+-        ref:"Product"
+-
+-    },
++    productsSupplied:[{
++        type:mongoose.Schema.Types.ObjectId,
++        ref:"Product"
++    }],
+     createdAt:{
+diff --git a/backend/Routers/supplierrouter.js b/backend/Routers/supplierrouter.js
+--- a/backend/Routers/supplierrouter.js
++++ b/backend/Routers/supplierrouter.js
+@@ -1,12 +1,13 @@
+ const express = require("express");
+ const router = express.Router();
+ const {createSupplier,searchSupplier,editSupplier,getAllSuppliers,deleteSupplier,getSupplierById} = require("../controller/suppliercontroller");
++const {authmiddleware} = require("../middleware/Authmiddleware");
+ 
+-router.post("/createsupplier", createSupplier); 
+-router.get("/getallsupplier", getAllSuppliers); 
+-router.get("/:supplierId",getSupplierById); 
+-router.get("/searchSupplier",searchSupplier)
+-router.put("/updatesupplier/:supplierId", editSupplier); 
+-router.delete("/:supplierId", deleteSupplier); 
++router.post("/createsupplier", authmiddleware, createSupplier);
++router.get("/getallsupplier", authmiddleware, getAllSuppliers);
++router.get("/searchSupplier", authmiddleware, searchSupplier);
++router.get("/:supplierId", authmiddleware, getSupplierById);
++router.put("/updatesupplier/:supplierId", authmiddleware, editSupplier);
++router.delete("/:supplierId", authmiddleware, deleteSupplier);
+ 
+ module.exports = router;
+diff --git a/backend/controller/suppliercontroller.js b/backend/controller/suppliercontroller.js
+--- a/backend/controller/suppliercontroller.js
++++ b/backend/controller/suppliercontroller.js
+@@ -1,4 +1,5 @@
+ const Supplier = require("../models/Suppliermodel");
++const Product = require("../models/Productmodel");
+ 
+ 
+ module.exports.createSupplier = async (req, res) => {
+@@ -10,6 +11,20 @@ module.exports.createSupplier = async (req, res) => {
+       return res.status(400).json({ success: false, message: "All fields are required." });
+     }
+ 
++    const suppliedIds = Array.isArray(productsSupplied) ? productsSupplied : [productsSupplied];
++    if (suppliedIds.length > 0) {
++      const foundProducts = await Product.find({ _id: { $in: suppliedIds } }).select("_id");
++      const foundIds = new Set(foundProducts.map((p) => p._id.toString()));
++      const unknownIds = suppliedIds.filter((id) => !foundIds.has(id.toString()));
++      if (unknownIds.length > 0) {
++        return res.status(400).json({
++          success: false,
++          message: `Unknown product IDs: ${unknownIds.join(", ")}.`,
++        });
++      }
++    }
++
+     const newSupplier = new Supplier({
+       name,
+       contactInfo,
+-      productsSupplied,
++      productsSupplied: suppliedIds,
+     });
+diff --git a/frontend/src/features/SupplierSlice.js b/frontend/src/features/SupplierSlice.js
+--- a/frontend/src/features/SupplierSlice.js
++++ b/frontend/src/features/SupplierSlice.js
+@@ -36,7 +36,7 @@ export const gettingallSupplier = createAsyncThunk(
+   
+   export const deleteSupplier = createAsyncThunk(
+-    'supplier/',
++    'supplier/deleteSupplier',
+     async (supplierId, { rejectWithValue }) => {
+       try {
+         const response = await axiosInstance.delete(`supplier/${supplierId}`,supplierId, { withCredentials: true });
+@@ -88,7 +88,10 @@ const supplierSlice = createSlice({
+       .addCase(deleteSupplier.fulfilled, (state, action) => {
+         state.isSupplierremove= false;
+-        state.getallCategory = action.payload.allCategory || [];
+-
++        state.getallSupplier = Array.isArray(state.getallSupplier)
++          ? state.getallSupplier.filter((s) => s._id !== action.meta.arg)
++          : [];
+       })
+diff --git a/frontend/src/pages/Supplierpage.jsx b/frontend/src/pages/Supplierpage.jsx
+--- a/frontend/src/pages/Supplierpage.jsx
++++ b/frontend/src/pages/Supplierpage.jsx
+@@ -1,4 +1,4 @@
+-import React, { useEffect, useState } from "react";
++import React, { useEffect, useState } from "react";
+ import TopNavbar from "../Components/TopNavbar";
+ import { useDispatch, useSelector } from "react-redux";
+ import { IoMdAdd } from "react-icons/io";
+@@ -80,7 +80,7 @@ function Supplierpage() {
+   const submitSupplier = async (event) => {
+     event.preventDefault();
+     const supplierInfo = {
+       name,
+       contactInfo: { phone: Phone, email: Email, address: Address },
+-      productsSupplied: Product,
++      productsSupplied: Product ? [Product] : [],
+     };
+     dispatch(CreateSupplier(supplierInfo))
+@@ -93,7 +93,7 @@ function Supplierpage() {
+   const handleEditClick = (supplier) => {
+     setSelectedSupplier(supplier);
+     setName(supplier.name);
+     setPhone(supplier.contactInfo?.phone);
+     setEmail(supplier.contactInfo?.email);
+     setAddress(supplier.contactInfo?.address);
+-    setProduct(supplier?.productsSupplied._id);
++    setProduct(supplier?.productsSupplied?.[0]?._id || "");
+     setIsFormVisible(true);
+   };

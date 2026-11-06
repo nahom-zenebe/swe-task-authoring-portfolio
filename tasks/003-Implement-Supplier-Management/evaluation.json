@@ -1,0 +1,33 @@
+{
+	"id": "003",
+	"title": "Implement supplier management",
+	"testCommand": "python3 -m pytest tests/test_validation.py",
+	"checks": [
+		{
+			"name": "model",
+			"points": 2,
+			"description": "productsSupplied is an array of Product ObjectId references in the Supplier model."
+		},
+		{
+			"name": "routes",
+			"points": 2,
+			"description": "Search route is declared before the parameterised ID route and all routes require authmiddleware."
+		},
+		{
+			"name": "controller-validation",
+			"points": 2,
+			"description": "createSupplier validates that every productsSupplied ID exists in the Product collection and returns 400 for unknown IDs."
+		},
+		{
+			"name": "frontend-slice",
+			"points": 2,
+			"description": "deleteSupplier thunk uses the correct action type and the fulfilled reducer removes the supplier from state."
+		},
+		{
+			"name": "frontend-page",
+			"points": 2,
+			"description": "Supplierpage exposes an Add Supplier button, a create/edit form, and a table with contact details and action buttons."
+		}
+	],
+	"totalPoints": 10
+}
